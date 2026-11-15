@@ -189,7 +189,7 @@
     </main>
 
     <script>
-        // --- Ultra-Lightweight Safari Audio Engine ---
+        // --- Lightweight Single-Instance Web Audio Engine for Safari ---
         let audioCtx = null;
         let soundEnabled = true;
         let audioUnlocked = false;
@@ -204,9 +204,19 @@
             if (audioCtx && audioCtx.state === 'suspended') {
                 audioCtx.resume();
             }
-            audioUnlocked = true;
+            if (!audioUnlocked && audioCtx) {
+                try {
+                    const buffer = audioCtx.createBuffer(1, 1, 22050);
+                    const source = audioCtx.createBufferSource();
+                    source.buffer = buffer;
+                    source.connect(audioCtx.destination);
+                    if (source.start) source.start(0);
+                } catch (e) {}
+                audioUnlocked = true;
+            }
         }
 
+        // Global touch/click unlock listener
         function unlockAudioOnGesture() {
             if (soundEnabled) {
                 initAudio();
@@ -216,8 +226,8 @@
         document.addEventListener('touchend', unlockAudioOnGesture, { capture: true, passive: true });
         document.addEventListener('click', unlockAudioOnGesture, { capture: true, passive: true });
 
-        // Ultra-lightweight click / impact sound function for maximum Safari performance
-        function playDiceImpactSound(volume = 0.2) {
+        // Single lightweight Web Audio oscillator pip for smooth and responsive touch audio
+        function playDiceImpactSound(volume = 0.25) {
             if (!soundEnabled) return;
             initAudio();
 

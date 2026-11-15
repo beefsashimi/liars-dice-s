@@ -1,0 +1,1089 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Virtual 3D Sic Bo Machine</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Three.js 3D Engine -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- Cannon.js Physics Engine -->
+    <script src="https://cdn.jsdelivr.net/npm/cannon@0.6.2/build/cannon.min.js"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap');
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            background: radial-gradient(circle at center, #1b2838 0%, #0d121d 100%);
+            touch-action: manipulation;
+            user-select: none;
+            -webkit-user-select: none;
+            margin: 0;
+            overflow: hidden;
+        }
+
+        /* Dice Selector Pill Buttons */
+        .dice-btn {
+            background: rgba(30, 41, 59, 0.7);
+            border: 1px solid rgba(212, 175, 55, 0.3);
+            color: #94a3b8;
+            transition: all 0.2s ease;
+        }
+        .dice-btn.active {
+            background: linear-gradient(135deg, #d4af37 0%, #996515 100%);
+            border-color: #fef08a;
+            color: #000000;
+            font-weight: 800;
+            box-shadow: 0 0 10px rgba(212, 175, 55, 0.4);
+        }
+
+        /* Large Rectangular HIDE / SHOW Button (160px x 64px) */
+        .rectangular-hide-btn {
+            width: 160px;
+            height: 64px;
+            border-radius: 14px;
+            background: linear-gradient(135deg, #ef4444 0%, #991b1b 100%);
+            border: 2px solid #fca5a5;
+            color: #ffffff;
+            font-weight: 900;
+            font-size: 1.25rem;
+            letter-spacing: 0.05em;
+            box-shadow: 0 8px 20px rgba(220, 38, 38, 0.5), inset 0 2px 4px rgba(255, 255, 255, 0.3);
+            transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+        }
+        .rectangular-hide-btn:active {
+            transform: scale(0.94);
+        }
+        .rectangular-hide-btn.active {
+            background: linear-gradient(135deg, #22c55e 0%, #14532d 100%);
+            border-color: #86efac;
+            box-shadow: 0 8px 20px rgba(34, 197, 94, 0.5), inset 0 2px 4px rgba(255, 255, 255, 0.3);
+        }
+
+        /* Lock Indicator Badge Style */
+        .dice-lock-badge {
+            box-shadow: 0 0 10px rgba(250, 204, 21, 0.8);
+        }
+
+        /* Black Circle Concealment Overlay (720px / 115vw) */
+        #blackDomeCover {
+            position: absolute;
+            width: 720px;
+            height: 720px;
+            max-width: 115vw;
+            max-height: 115vw;
+            border-radius: 50%;
+            background: radial-gradient(circle at 35% 35%, #262626 0%, #0a0a0a 70%, #000000 100%);
+            box-shadow: 0 30px 80px rgba(0, 0, 0, 0.98), inset 0 4px 12px rgba(255, 255, 255, 0.15);
+            border: 4px solid #334155;
+            pointer-events: none;
+            opacity: 0;
+            transform: scale(0.6);
+            transition: opacity 0.35s ease, transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+            z-index: 15;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+
+        #blackDomeCover.visible {
+            opacity: 1;
+            transform: scale(1);
+        }
+
+        /* History Table Masking State */
+        #historyCard.masked {
+            opacity: 0.35;
+        }
+        #historyCard.masked #historyTitle {
+            color: #64748b !important;
+        }
+
+        /* Mini Dice Icon in History Table */
+        .history-dice-val {
+            width: 24px;
+            height: 24px;
+            border-radius: 4px;
+            background: #ffffff;
+            color: #1e293b;
+            font-weight: 800;
+            font-size: 12px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.4);
+            border: 1px solid #cbd5e1;
+            transition: all 0.2s ease;
+        }
+        .history-dice-val.val-1, .history-dice-val.val-4 {
+            color: #d90429;
+        }
+
+        canvas {
+            display: block;
+            outline: none;
+        }
+    </style>
+</head>
+<body class="h-screen w-screen overflow-hidden flex flex-col justify-between text-white select-none">
+
+    <!-- Header & Floating Controls -->
+    <header class="w-full py-2.5 px-4 flex justify-between items-start z-30 bg-black/40 backdrop-blur-md border-b border-amber-500/20 shrink-0">
+        <!-- Top Left: Dice Count Selection (1 to 5) + Sound Toggle Button + Helper Description below -->
+        <div class="flex flex-col space-y-1">
+            <div class="flex items-center space-x-1.5 bg-slate-900/80 p-1 rounded-xl border border-amber-500/30 w-fit">
+                <span class="text-[10px] sm:text-[11px] font-bold text-amber-200/80 px-1 uppercase tracking-wider">DICE:</span>
+                <button class="dice-btn px-2.5 py-1 rounded-lg text-xs font-semibold" onclick="setDiceCount(1)">1</button>
+                <button class="dice-btn px-2.5 py-1 rounded-lg text-xs font-semibold" onclick="setDiceCount(2)">2</button>
+                <button class="dice-btn px-2.5 py-1 rounded-lg text-xs font-semibold" onclick="setDiceCount(3)">3</button>
+                <button class="dice-btn px-2.5 py-1 rounded-lg text-xs font-semibold" onclick="setDiceCount(4)">4</button>
+                <button class="dice-btn active px-2.5 py-1 rounded-lg text-xs font-semibold" onclick="setDiceCount(5)">5</button>
+                
+                <!-- Sound Toggle Button placed right next to 5 (Enabled by default) -->
+                <button id="soundToggle" onclick="toggleSound()" class="ml-1 px-2 py-1 bg-slate-800 hover:bg-slate-700 rounded-lg border border-amber-500/30 text-amber-400 flex items-center justify-center transition-colors cursor-pointer text-xs" title="Toggle Audio">
+                    <i class="fa-solid fa-volume-high text-amber-400" id="soundIcon"></i>
+                </button>
+            </div>
+            
+            <!-- Helper text moved directly below the dice count selector table -->
+            <div class="text-[11px] text-amber-300/80 font-semibold pl-1 flex items-center">
+                <i class="fa-solid fa-hand-pointer mr-1.5 text-amber-400 text-xs"></i> Tap dice to lock / unlock
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Viewport Container -->
+    <main class="relative flex-1 w-full min-h-0 flex items-center justify-center overflow-hidden">
+        
+        <!-- Top-Center: Rectangular Red HIDE Button positioned directly above the machine -->
+        <div class="absolute top-4 left-1/2 -translate-x-1/2 z-20 flex items-center pointer-events-auto">
+            <button id="hideToggleBtn" onclick="toggleHideCover()" class="rectangular-hide-btn flex items-center gap-2 shadow-2xl" title="Quick Conceal">
+                <i id="hideBtnIcon" class="fa-solid fa-eye-slash text-sm"></i>
+                <span id="hideBtnText">HIDE</span>
+            </button>
+        </div>
+
+        <!-- "疊骰" Banner Overlay for 5-Second Physics Timeout -->
+        <div id="dieStuckBanner" class="absolute inset-0 z-40 flex items-center justify-center pointer-events-none transition-all duration-300 opacity-0 scale-90">
+            <div class="bg-black/90 border-2 border-yellow-500/80 px-14 py-8 rounded-3xl shadow-[0_0_80px_rgba(234,179,8,0.5)] backdrop-blur-md flex flex-col items-center">
+                <h1 class="text-8xl font-black text-white tracking-widest drop-shadow-[0_4px_10px_rgba(0,0,0,0.9)] animate-pulse">疊骰</h1>
+            </div>
+        </div>
+
+        <!-- Black Circular Concealment Overlay (Enlarged 720px / 115vw) -->
+        <div id="blackDomeCover">
+            <i class="fa-solid fa-user-shield text-gray-500 text-5xl mb-3 opacity-40"></i>
+            <span class="text-sm font-bold text-gray-400 tracking-widest uppercase">CONCEALED</span>
+        </div>
+
+        <!-- 3D Canvas Container -->
+        <div id="canvasContainer" class="w-full h-full absolute inset-0 cursor-pointer"></div>
+    </main>
+
+    <script>
+        // --- Dual Web Audio + HTML5 Audio Engine (Guaranteed iOS Safari Sound) ---
+        let audioCtx = null;
+        let soundEnabled = true; // Sound enabled by default
+        let audioUnlocked = false;
+
+        // Pre-generate a short, deep percussive WAV Data URI for iOS HTML5 Audio playback
+        // (HTML5 <audio> plays even when the iPhone hardware Silent/Mute switch is ON)
+        function createImpactWavDataUri(baseFreq = 160, duration = 0.08) {
+            const sampleRate = 22050;
+            const numSamples = Math.floor(sampleRate * duration);
+            const buffer = new ArrayBuffer(44 + numSamples * 2);
+            const view = new DataView(buffer);
+
+            const writeString = (offset, str) => {
+                for (let i = 0; i < str.length; i++) {
+                    view.setUint8(offset + i, str.charCodeAt(i));
+                }
+            };
+
+            writeString(0, 'RIFF');
+            view.setUint32(4, 36 + numSamples * 2, true);
+            writeString(8, 'WAVE');
+            writeString(12, 'fmt ');
+            view.setUint32(16, 16, true);
+            view.setUint16(20, 1, true); // PCM
+            view.setUint16(22, 1, true); // Mono
+            view.setUint32(24, sampleRate, true);
+            view.setUint32(28, sampleRate * 2, true);
+            view.setUint16(32, 2, true);
+            view.setUint16(34, 16, true);
+            writeString(36, 'data');
+            view.setUint32(40, numSamples * 2, true);
+
+            let phase = 0;
+            for (let i = 0; i < numSamples; i++) {
+                const t = i / numSamples;
+                const freq = baseFreq * Math.pow(60 / baseFreq, t);
+                const env = Math.pow(1 - t, 2.2);
+                phase += (2 * Math.PI * freq) / sampleRate;
+                const sample = Math.sin(phase) * env * 0.75;
+                view.setInt16(44 + i * 2, Math.max(-32768, Math.min(32767, sample * 32767)), true);
+            }
+
+            let binary = '';
+            const bytes = new Uint8Array(buffer);
+            for (let i = 0; i < bytes.byteLength; i++) {
+                binary += String.fromCharCode(bytes[i]);
+            }
+            return 'data:audio/wav;base64,' + btoa(binary);
+        }
+
+        // Pool of 6 HTML5 Audio instances with slight pitch variations for overlapping dice impacts
+        const htmlAudioPool = [
+            new Audio(createImpactWavDataUri(170, 0.08)),
+            new Audio(createImpactWavDataUri(195, 0.08)),
+            new Audio(createImpactWavDataUri(220, 0.08)),
+            new Audio(createImpactWavDataUri(180, 0.08)),
+            new Audio(createImpactWavDataUri(210, 0.08)),
+            new Audio(createImpactWavDataUri(160, 0.08))
+        ];
+        htmlAudioPool.forEach(a => {
+            a.preload = 'auto';
+            a.setAttribute('playsinline', '');
+            a.setAttribute('webkit-playsinline', '');
+        });
+        let poolIdx = 0;
+
+        function initAudio() {
+            if (!audioCtx) {
+                const AudioContext = window.AudioContext || window.webkitAudioContext;
+                if (AudioContext) {
+                    audioCtx = new AudioContext();
+                }
+            }
+            if (audioCtx && audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+            if (!audioUnlocked) {
+                // Prime Web Audio
+                if (audioCtx) {
+                    const buffer = audioCtx.createBuffer(1, 1, 22050);
+                    const source = audioCtx.createBufferSource();
+                    source.buffer = buffer;
+                    source.connect(audioCtx.destination);
+                    if (source.start) source.start(0);
+                }
+                // Prime HTML5 Audio pool synchronously inside user gesture
+                htmlAudioPool.forEach(a => {
+                    a.muted = false;
+                    a.volume = 0.01;
+                    const p = a.play();
+                    if (p && p.then) {
+                        p.then(() => {
+                            a.pause();
+                            a.currentTime = 0;
+                        }).catch(() => {});
+                    }
+                });
+                audioUnlocked = true;
+            }
+        }
+
+        // Global iOS touch/click unlock listener on capture phase
+        function unlockAudioOnGesture() {
+            if (soundEnabled) {
+                initAudio();
+            }
+        }
+        document.addEventListener('touchstart', unlockAudioOnGesture, { capture: true, passive: true });
+        document.addEventListener('touchend', unlockAudioOnGesture, { capture: true, passive: true });
+        document.addEventListener('click', unlockAudioOnGesture, { capture: true, passive: true });
+
+        // Deeper pitch oscillator impact sound backed by HTML5 Audio + Web Audio fallback for iOS
+        function playDiceImpactSound(volume = 0.3) {
+            if (!soundEnabled) return;
+            initAudio();
+
+            // 1. Play via HTML5 Audio pool (works on iOS even if Silent Switch is ON)
+            const audioEl = htmlAudioPool[poolIdx];
+            poolIdx = (poolIdx + 1) % htmlAudioPool.length;
+            try {
+                audioEl.muted = false;
+                audioEl.pause();
+                audioEl.currentTime = 0;
+                audioEl.volume = Math.min(1, Math.max(0.1, volume * 2.5));
+                const playPromise = audioEl.play();
+                if (playPromise && playPromise.catch) {
+                    playPromise.catch(() => {});
+                }
+            } catch (e) {}
+
+            // 2. Simultaneous Web Audio synthesizer (works reliably when iPhone Ring mode is active)
+            if (audioCtx && audioCtx.state === 'running') {
+                try {
+                    const osc = audioCtx.createOscillator();
+                    const gain = audioCtx.createGain();
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(190 + Math.random() * 110, audioCtx.currentTime);
+                    osc.frequency.exponentialRampToValueAtTime(60, audioCtx.currentTime + 0.08);
+                    gain.gain.setValueAtTime(volume, audioCtx.currentTime);
+                    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.08);
+                    osc.connect(gain);
+                    gain.connect(audioCtx.destination);
+                    osc.start();
+                    osc.stop(audioCtx.currentTime + 0.08);
+                } catch (e) {}
+            }
+        }
+
+        function toggleSound() {
+            soundEnabled = !soundEnabled;
+            if (soundEnabled) {
+                initAudio();
+                playDiceImpactSound(0.25);
+            }
+            const icon = document.getElementById('soundIcon');
+            icon.className = soundEnabled ? 'fa-solid fa-volume-high text-amber-400' : 'fa-solid fa-volume-xmark text-gray-500';
+        }
+
+        // --- Hide Cover Toggle & History Masking ---
+        let isDiceHidden = false;
+
+        function toggleHideCover() {
+            isDiceHidden = !isDiceHidden;
+            const btn = document.getElementById('hideToggleBtn');
+            const icon = document.getElementById('hideBtnIcon');
+            const text = document.getElementById('hideBtnText');
+            const blackDomeCover = document.getElementById('blackDomeCover');
+
+            if (isDiceHidden) {
+                btn.classList.add('active');
+                icon.className = 'fa-solid fa-eye text-sm';
+                text.innerText = 'SHOW';
+                blackDomeCover.classList.add('visible');
+            } else {
+                btn.classList.remove('active');
+                icon.className = 'fa-solid fa-eye-slash text-sm';
+                text.innerText = 'HIDE';
+                blackDomeCover.classList.remove('visible');
+            }
+        }
+
+        // --- Three.js & Cannon.js Physics Integration ---
+        const container = document.getElementById('canvasContainer');
+        const scene = new THREE.Scene();
+
+        const camera = new THREE.PerspectiveCamera(40, container.clientWidth / container.clientHeight, 0.1, 1000);
+        camera.position.set(0, 14, 15);
+        camera.lookAt(0, 0.2, 0);
+
+        let renderer;
+        try {
+            // Attempt standard WebGL renderer with safe options for sandboxed environments
+            renderer = new THREE.WebGLRenderer({ 
+                antialias: true, 
+                alpha: true,
+                powerPreference: "high-performance",
+                failIfMajorPerformanceCaveat: false
+            });
+        } catch (e1) {
+            try {
+                // Fallback attempt without antialias
+                renderer = new THREE.WebGLRenderer({ 
+                    antialias: false, 
+                    alpha: true,
+                    failIfMajorPerformanceCaveat: false
+                });
+            } catch (e2) {
+                console.error("WebGL context creation failed completely:", e2);
+            }
+        }
+        
+        if (!renderer || !renderer.domElement) {
+            container.innerHTML = '<div class="flex flex-col items-center justify-center h-full text-amber-400 font-bold p-6 text-center bg-slate-900/90 rounded-2xl border border-amber-500/30 shadow-2xl"><i class="fa-solid fa-triangle-exclamation text-4xl mb-3 text-amber-500"></i><p class="text-lg">WebGL hardware acceleration is unavailable in this sandbox view.</p><p class="text-sm text-gray-400 mt-2">Please click "Preview" or open in an external browser tab to run the 3D Sic Bo Machine.</p></div>';
+        } else {
+            renderer.setSize(container.clientWidth, container.clientHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            renderer.toneMapping = THREE.ACESFilmicToneMapping;
+            container.appendChild(renderer.domElement);
+        }
+
+        // Cannon.js Physics World
+        const world = new CANNON.World();
+        world.gravity.set(0, -28, 0);
+        world.broadphase = new CANNON.NaiveBroadphase();
+        world.solver.iterations = 10;
+
+        // Ultra-Slippery & Rapid Damping Physics Contact Materials
+        const feltMatPhysics = new CANNON.Material('felt');
+        const diceMatPhysics = new CANNON.Material('dice');
+
+        const diceFeltContact = new CANNON.ContactMaterial(diceMatPhysics, feltMatPhysics, {
+            friction: 0.05,       // High slipperiness against tray floor
+            restitution: 0.45
+        });
+        const diceDiceContact = new CANNON.ContactMaterial(diceMatPhysics, diceMatPhysics, {
+            friction: 0.02,       // Extremely slippery dice-to-dice contact
+            restitution: 0.5
+        });
+        world.addContactMaterial(diceFeltContact);
+        world.addContactMaterial(diceDiceContact);
+
+        // Lighting
+        const ambientLight = new THREE.AmbientLight(0xffffff, 1.1);
+        scene.add(ambientLight);
+
+        const domeSpot = new THREE.SpotLight(0xffffff, 2.2);
+        domeSpot.position.set(0, 20, 5);
+        domeSpot.angle = Math.PI / 3;
+        domeSpot.penumbra = 0.3;
+        domeSpot.castShadow = true;
+        domeSpot.shadow.mapSize.width = 1024; // Optimized for mobile Safari GPU
+        domeSpot.shadow.mapSize.height = 1024;
+        domeSpot.shadow.camera.near = 5;
+        domeSpot.shadow.camera.far = 30;
+        scene.add(domeSpot);
+
+        const frontLight = new THREE.DirectionalLight(0xffffff, 0.9);
+        frontLight.position.set(0, 10, 15);
+        scene.add(frontLight);
+
+        // Machine Geometry & Felt Mesh
+        const machineGroup = new THREE.Group();
+        machineGroup.scale.set(0.9, 0.9, 0.9);
+        scene.add(machineGroup);
+
+        const FLOOR_SURFACE_Y = 1.64;
+
+        const baseGeo = new THREE.CylinderGeometry(5.8, 6.5, 2.5, 64);
+        const baseMat = new THREE.MeshStandardMaterial({
+            color: 0x0f172a,
+            roughness: 0.25,
+            metalness: 0.85
+        });
+        const baseMesh = new THREE.Mesh(baseGeo, baseMat);
+        baseMesh.position.y = 0;
+        baseMesh.receiveShadow = true;
+        machineGroup.add(baseMesh);
+
+        const ringGeo = new THREE.TorusGeometry(5.85, 0.15, 16, 64);
+        const ringMat = new THREE.MeshStandardMaterial({
+            color: 0xd4af37,
+            roughness: 0.15,
+            metalness: 0.95
+        });
+        const ringMesh = new THREE.Mesh(ringGeo, ringMat);
+        ringMesh.rotation.x = Math.PI / 2;
+        ringMesh.position.y = 1.25;
+        machineGroup.add(ringMesh);
+
+        const plateGeo = new THREE.CylinderGeometry(4.5, 4.5, 0.4, 64);
+        const plateMat = new THREE.MeshStandardMaterial({
+            color: 0x1e293b,
+            roughness: 0.4,
+            metalness: 0.3
+        });
+        const plateMesh = new THREE.Mesh(plateGeo, plateMat);
+        plateMesh.position.y = 1.4;
+        plateMesh.receiveShadow = true;
+        machineGroup.add(plateMesh);
+
+        const feltGeo = new THREE.CylinderGeometry(4.3, 4.3, 0.08, 64);
+        const feltMat = new THREE.MeshStandardMaterial({
+            color: 0x0b6623,
+            roughness: 0.9,
+            metalness: 0.05
+        });
+        const feltMesh = new THREE.Mesh(feltGeo, feltMat);
+        feltMesh.position.y = FLOOR_SURFACE_Y - 0.04;
+        feltMesh.receiveShadow = true;
+        machineGroup.add(feltMesh);
+
+        // Glass dome graphics removed for maximum Safari frame-rate performance testing
+        // (Physics dome boundary constraints inside updatePhysics remain fully active)
+
+        // Cannon Floor Physics Body
+        const groundBody = new CANNON.Body({
+            mass: 0,
+            shape: new CANNON.Plane(),
+            material: feltMatPhysics
+        });
+        groundBody.quaternion.setFromAxisAngle(new CANNON.Vec3(1, 0, 0), -Math.PI / 2);
+        groundBody.position.set(0, FLOOR_SURFACE_Y * 0.9, 0);
+        world.addBody(groundBody);
+
+        // Texture Generator for Concave Dice Pips
+        function createDiceTextureMaps(pipCount) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 512;
+            canvas.height = 512;
+            const ctx = canvas.getContext('2d');
+
+            const bumpCanvas = document.createElement('canvas');
+            bumpCanvas.width = 512;
+            bumpCanvas.height = 512;
+            const bCtx = bumpCanvas.getContext('2d');
+
+            const radGrad = ctx.createRadialGradient(256, 256, 50, 256, 256, 360);
+            radGrad.addColorStop(0, '#ffffff');
+            radGrad.addColorStop(1, '#f3f4f6');
+            ctx.fillStyle = radGrad;
+            ctx.fillRect(0, 0, 512, 512);
+
+            ctx.strokeStyle = '#cbd5e1';
+            ctx.lineWidth = 10;
+            ctx.strokeRect(5, 5, 502, 502);
+
+            bCtx.fillStyle = '#808080';
+            bCtx.fillRect(0, 0, 512, 512);
+
+            const center = 256;
+            const left = 135;
+            const right = 377;
+            const top = 135;
+            const bottom = 377;
+
+            function drawConcavePip(x, y, radius, mainColor) {
+                const bumpGrad = bCtx.createRadialGradient(x, y, 0, x, y, radius + 4);
+                bumpGrad.addColorStop(0, '#000000');
+                bumpGrad.addColorStop(0.75, '#404040');
+                bumpGrad.addColorStop(0.92, '#808080');
+                bumpGrad.addColorStop(1, '#808080');
+
+                bCtx.beginPath();
+                bCtx.arc(x, y, radius + 4, 0, Math.PI * 2);
+                bCtx.fillStyle = bumpGrad;
+                bCtx.fill();
+
+                ctx.beginPath();
+                ctx.arc(x, y, radius + 3, 0, Math.PI * 2);
+                ctx.fillStyle = '#334155';
+                ctx.fill();
+
+                const pipGrad = ctx.createRadialGradient(x - radius * 0.25, y - radius * 0.25, radius * 0.05, x, y, radius);
+                pipGrad.addColorStop(0, mainColor);
+                pipGrad.addColorStop(0.8, mainColor);
+                pipGrad.addColorStop(1, '#000000');
+
+                ctx.beginPath();
+                ctx.arc(x, y, radius, 0, Math.PI * 2);
+                ctx.fillStyle = pipGrad;
+                ctx.fill();
+            }
+
+            const RED_PIP = '#d90429';
+            const DARK_PIP = '#1e293b';
+
+            switch (pipCount) {
+                case 1:
+                    drawConcavePip(center, center, 78, RED_PIP);
+                    break;
+                case 2:
+                    drawConcavePip(left, top, 46, DARK_PIP);
+                    drawConcavePip(right, bottom, 46, DARK_PIP);
+                    break;
+                case 3:
+                    drawConcavePip(left, top, 44, DARK_PIP);
+                    drawConcavePip(center, center, 44, DARK_PIP);
+                    drawConcavePip(right, bottom, 44, DARK_PIP);
+                    break;
+                case 4:
+                    drawConcavePip(left, top, 46, RED_PIP);
+                    drawConcavePip(right, top, 46, RED_PIP);
+                    drawConcavePip(left, bottom, 46, RED_PIP);
+                    drawConcavePip(right, bottom, 46, RED_PIP);
+                    break;
+                case 5:
+                    drawConcavePip(left, top, 44, DARK_PIP);
+                    drawConcavePip(right, top, 44, DARK_PIP);
+                    drawConcavePip(center, center, 44, DARK_PIP);
+                    drawConcavePip(left, bottom, 44, DARK_PIP);
+                    drawConcavePip(right, bottom, 44, DARK_PIP);
+                    break;
+                case 6:
+                    drawConcavePip(left, top, 42, DARK_PIP);
+                    drawConcavePip(right, top, 42, DARK_PIP);
+                    drawConcavePip(left, center, 42, DARK_PIP);
+                    drawConcavePip(right, center, 42, DARK_PIP);
+                    drawConcavePip(left, bottom, 42, DARK_PIP);
+                    drawConcavePip(right, bottom, 42, DARK_PIP);
+                    break;
+            }
+
+            const diffTex = new THREE.CanvasTexture(canvas);
+            diffTex.needsUpdate = true;
+
+            const bumpTex = new THREE.CanvasTexture(bumpCanvas);
+            bumpTex.needsUpdate = true;
+
+            return { map: diffTex, bumpMap: bumpTex };
+        }
+
+        const faceMaps = {
+            1: createDiceTextureMaps(1),
+            2: createDiceTextureMaps(2),
+            3: createDiceTextureMaps(3),
+            4: createDiceTextureMaps(4),
+            5: createDiceTextureMaps(5),
+            6: createDiceTextureMaps(6)
+        };
+
+        // Static material mapping matching fixed 6-sided setup:
+        // +X: 2, -X: 5, +Y: 1 (Top), -Y: 6 (Bottom), +Z: 3, -Z: 4
+        function getDiceMaterials(isLocked = false) {
+            const baseColor = isLocked ? 0xffd700 : 0xffffff;
+
+            const matConfig = (maps) => new THREE.MeshStandardMaterial({
+                color: baseColor,
+                map: maps.map,
+                bumpMap: maps.bumpMap,
+                bumpScale: -0.12,
+                roughness: isLocked ? 0.3 : 0.1,
+                metalness: isLocked ? 0.6 : 0.03
+            });
+
+            return [
+                matConfig(faceMaps[2]), // +X
+                matConfig(faceMaps[5]), // -X
+                matConfig(faceMaps[1]), // +Y (Top)
+                matConfig(faceMaps[6]), // -Y (Bottom)
+                matConfig(faceMaps[3]), // +Z
+                matConfig(faceMaps[4])  // -Z
+            ];
+        }
+
+        // Helper to determine which face is currently pointing up based on 3D rotation
+        const localFaceNormals = [
+            { val: 2, vec: new THREE.Vector3(1, 0, 0) },
+            { val: 5, vec: new THREE.Vector3(-1, 0, 0) },
+            { val: 1, vec: new THREE.Vector3(0, 1, 0) },
+            { val: 6, vec: new THREE.Vector3(0, -1, 0) },
+            { val: 3, vec: new THREE.Vector3(0, 0, 1) },
+            { val: 4, vec: new THREE.Vector3(0, 0, -1) }
+        ];
+
+        function getTopFaceValue(mesh) {
+            let maxDot = -Infinity;
+            let topVal = 1;
+            const worldNormal = new THREE.Vector3();
+            const upVector = new THREE.Vector3(0, 1, 0);
+
+            localFaceNormals.forEach(fn => {
+                worldNormal.copy(fn.vec).applyQuaternion(mesh.quaternion);
+                const dot = worldNormal.dot(upVector);
+                if (dot > maxDot) {
+                    maxDot = dot;
+                    topVal = fn.val;
+                }
+            });
+
+            return topVal;
+        }
+
+        // Rounded Box Geometry Generator
+        function createRoundedBoxGeometry(size, radius, segments) {
+            const geometry = new THREE.BoxGeometry(size, size, size, segments, segments, segments);
+            const position = geometry.attributes.position;
+            const normal = geometry.attributes.normal;
+            const halfSize = size / 2;
+            const innerSize = halfSize - radius;
+
+            const vec = new THREE.Vector3();
+
+            for (let i = 0; i < position.count; i++) {
+                vec.fromBufferAttribute(position, i);
+
+                const x = Math.max(Math.min(vec.x, innerSize), -innerSize);
+                const y = Math.max(Math.min(vec.y, innerSize), -innerSize);
+                const z = Math.max(Math.min(vec.z, innerSize), -innerSize);
+
+                const dir = new THREE.Vector3(vec.x - x, vec.y - y, vec.z - z);
+                const len = dir.length();
+
+                if (len > 0) {
+                    dir.normalize();
+                    position.setXYZ(i, x + dir.x * radius, y + dir.y * radius, z + dir.z * radius);
+                    normal.setXYZ(i, dir.x, dir.y, dir.z);
+                }
+            }
+
+            geometry.computeVertexNormals();
+            return geometry;
+        }
+
+        const diceArray = [];
+        const DICE_SIZE = 1.44;
+        const CORNER_RADIUS = 0.18;
+        let activeDiceCount = 5;
+
+        const diceGeometry = createRoundedBoxGeometry(DICE_SIZE, CORNER_RADIUS, 16);
+
+        for (let i = 0; i < 5; i++) {
+            const diceMesh = new THREE.Mesh(diceGeometry, getDiceMaterials(false));
+            diceMesh.castShadow = true;
+            diceMesh.receiveShadow = true;
+
+            machineGroup.add(diceMesh);
+
+            const halfExtents = new CANNON.Vec3(DICE_SIZE / 2, DICE_SIZE / 2, DICE_SIZE / 2);
+            const diceBody = new CANNON.Body({
+                mass: 1,
+                shape: new CANNON.Box(halfExtents),
+                material: diceMatPhysics,
+                linearDamping: 0.38,   // Specified kinetic linear damping
+                angularDamping: 0.45   // Specified kinetic angular damping
+            });
+
+            // Enforce Sleep Parameters for rapid 2-3 second settling
+            diceBody.allowSleep = true;
+            diceBody.sleepSpeedLimit = 0.1;
+            diceBody.sleepTimeLimit = 0.25;
+
+            diceBody.addEventListener('collide', () => playDiceImpactSound(0.2));
+
+            world.addBody(diceBody);
+
+            diceArray.push({
+                mesh: diceMesh,
+                body: diceBody,
+                targetValue: 1,
+                isResting: true,
+                isLocked: false
+            });
+        }
+
+        const layoutPresets = {
+            1: [{ x: 0, z: 0 }],
+            2: [{ x: -0.9, z: 0 }, { x: 0.9, z: 0 }],
+            3: [{ x: 0, z: -1.0 }, { x: -1.0, z: 0.8 }, { x: 1.0, z: 0.8 }],
+            4: [{ x: -1.0, z: -1.0 }, { x: 1.0, z: -1.0 }, { x: -1.0, z: 1.0 }, { x: 1.0, z: 1.0 }],
+            5: [{ x: 0, z: 0 }, { x: -1.2, z: -1.2 }, { x: 1.2, z: -1.2 }, { x: -1.2, z: 1.2 }, { x: 1.2, z: 1.2 }]
+        };
+
+        function resetDicePositions() {
+            const positions = layoutPresets[activeDiceCount];
+            diceArray.forEach((d, i) => {
+                d.isLocked = false;
+                d.mesh.material = getDiceMaterials(false);
+                d.body.type = CANNON.Body.DYNAMIC;
+                d.body.mass = 1;
+                d.body.updateMassProperties();
+
+                if (i < activeDiceCount) {
+                    d.mesh.visible = true;
+                    const pos = positions[i];
+                    d.mesh.position.set(pos.x, FLOOR_SURFACE_Y + (DICE_SIZE / 2), pos.z);
+                    d.mesh.rotation.set(0, (Math.PI / 4) * i, 0);
+                    d.body.position.copy(d.mesh.position);
+                    d.body.quaternion.copy(d.mesh.quaternion);
+                    d.body.velocity.set(0, 0, 0);
+                    d.body.angularVelocity.set(0, 0, 0);
+                    d.isResting = true;
+                    d.targetValue = getTopFaceValue(d.mesh);
+                } else {
+                    d.mesh.visible = false;
+                }
+            });
+        }
+
+        function setDiceCount(count) {
+            if (isShaking) return;
+            activeDiceCount = count;
+            document.querySelectorAll('.dice-btn').forEach((btn, idx) => {
+                if (idx + 1 === count) {
+                    btn.classList.add('active');
+                } else {
+                    btn.classList.remove('active');
+                }
+            });
+            resetDicePositions();
+        }
+
+        resetDicePositions();
+
+        // 5-Second Physics Reshake Logic with 1-Second "疊骰" Display
+        let isShaking = false;
+        let shakeStartTime = 0;
+        const SHAKE_DURATION = 1600;
+        let isAutoReshaking = false;
+
+        function showStuckBannerAndReshake() {
+            if (isAutoReshaking) return;
+            isAutoReshaking = true;
+            isShaking = false;
+
+            const banner = document.getElementById('dieStuckBanner');
+            banner.classList.remove('opacity-0', 'scale-90');
+            banner.classList.add('opacity-100', 'scale-100');
+
+            setTimeout(() => {
+                banner.classList.remove('opacity-100', 'scale-100');
+                banner.classList.add('opacity-0', 'scale-90');
+                isAutoReshaking = false;
+                startShake();
+            }, 1000);
+        }
+
+        function updatePhysics(delta) {
+            if (!isShaking && diceArray.every(d => d.isResting)) return;
+
+            world.step(1 / 60, delta, 3);
+            const elapsedTime = performance.now() - shakeStartTime;
+            const halfDiceHeight = DICE_SIZE / 2;
+            const baseFloorY = FLOOR_SURFACE_Y + halfDiceHeight;
+            const domeMaxRadius = 3.2;
+
+            // 5-Second Auto Timeout Monitoring
+            if (isShaking && elapsedTime > 5000 && !isAutoReshaking) {
+                showStuckBannerAndReshake();
+                return;
+            }
+
+            if (elapsedTime < SHAKE_DURATION) {
+                const vibrationIntensity = Math.sin(elapsedTime * 0.08) * 0.12;
+                plateMesh.position.y = 1.4 + vibrationIntensity;
+                feltMesh.position.y = (FLOOR_SURFACE_Y - 0.04) + vibrationIntensity;
+            } else {
+                plateMesh.position.y = THREE.MathUtils.lerp(plateMesh.position.y, 1.4, 0.1);
+                feltMesh.position.y = THREE.MathUtils.lerp(feltMesh.position.y, FLOOR_SURFACE_Y - 0.04, 0.1);
+            }
+
+            for (let i = 0; i < activeDiceCount; i++) {
+                const d = diceArray[i];
+                if (d.isResting || d.isLocked) continue;
+
+                d.mesh.position.copy(d.body.position);
+                d.mesh.quaternion.copy(d.body.quaternion);
+
+                const currentFloor = elapsedTime < SHAKE_DURATION ? (feltMesh.position.y + 0.04 + halfDiceHeight) : baseFloorY;
+                if (d.body.position.y <= currentFloor) {
+                    d.body.position.y = currentFloor;
+
+                    if (elapsedTime < SHAKE_DURATION) {
+                        d.body.velocity.y = Math.abs(d.body.velocity.y) * (0.5 + Math.random() * 0.3);
+                        d.body.velocity.y += 2.0 + Math.random() * 4.0;
+                        d.body.velocity.x += (Math.random() - 0.5) * 3;
+                        d.body.velocity.z += (Math.random() - 0.5) * 3;
+                        playDiceImpactSound(0.25);
+                    } else {
+                        d.body.velocity.y = -d.body.velocity.y * 0.3;
+                        d.body.velocity.x *= 0.6;
+                        d.body.velocity.z *= 0.6;
+
+                        if (d.body.sleepState === CANNON.Body.SLEEPING || (Math.abs(d.body.velocity.y) < 0.2 && d.body.velocity.lengthSquared() < 0.1)) {
+                            d.body.velocity.set(0, 0, 0);
+                            d.body.angularVelocity.set(0, 0, 0);
+                            d.isResting = true;
+                            d.mesh.position.y = baseFloorY;
+
+                            // Snap rotation perfectly flat to the nearest 90-degree orthogonal face
+                            const euler = new THREE.Euler().setFromQuaternion(d.mesh.quaternion, 'YXZ');
+                            euler.x = Math.round(euler.x / (Math.PI / 2)) * (Math.PI / 2);
+                            euler.z = Math.round(euler.z / (Math.PI / 2)) * (Math.PI / 2);
+                            d.mesh.rotation.copy(euler);
+                            d.body.quaternion.copy(d.mesh.quaternion);
+
+                            d.targetValue = getTopFaceValue(d.mesh);
+                        }
+                    }
+                }
+
+                const distFromCenter = Math.sqrt(d.body.position.x ** 2 + d.body.position.z ** 2);
+                if (distFromCenter > domeMaxRadius) {
+                    const normalX = -d.body.position.x / distFromCenter;
+                    const normalZ = -d.body.position.z / distFromCenter;
+
+                    d.body.position.x = -normalX * domeMaxRadius;
+                    d.body.position.z = -normalZ * domeMaxRadius;
+
+                    const dot = d.body.velocity.x * normalX + d.body.velocity.z * normalZ;
+                    d.body.velocity.x = (d.body.velocity.x - 2 * dot * normalX) * 0.75;
+                    d.body.velocity.z = (d.body.velocity.z - 2 * dot * normalZ) * 0.75;
+
+                    // Accelerated downward force to prevent dice from hanging on dome wall
+                    if (elapsedTime > SHAKE_DURATION) {
+                        d.body.velocity.y -= 1.8;
+                        d.body.velocity.x += normalX * 0.6;
+                        d.body.velocity.z += normalZ * 0.6;
+                    }
+
+                    playDiceImpactSound(0.25);
+                }
+
+                // Spherical/Ellipsoidal glass dome ceiling & upper wall constraint (2x taller)
+                const domeCenterY = 1.4;
+                const dy = (d.body.position.y - domeCenterY) / 2.0; // Normalize Y by 2x dome height scale
+                const distFromDomeCenter = Math.sqrt(d.body.position.x ** 2 + dy ** 2 + d.body.position.z ** 2);
+                const innerDomeLimit = 3.85; // Dome radius (4.6) minus die half-diagonal
+
+                if (dy > 0 && distFromDomeCenter > innerDomeLimit) {
+                    const nx = -d.body.position.x / distFromDomeCenter;
+                    const ny = -(dy / 2.0) / distFromDomeCenter;
+                    const nz = -d.body.position.z / distFromDomeCenter;
+                    const nLen = Math.sqrt(nx * nx + ny * ny + nz * nz);
+                    const unx = nx / nLen;
+                    const uny = ny / nLen;
+                    const unz = nz / nLen;
+
+                    // Clamp position inside the taller glass dome
+                    const scaleFactor = innerDomeLimit / distFromDomeCenter;
+                    d.body.position.x *= scaleFactor;
+                    d.body.position.y = domeCenterY + (d.body.position.y - domeCenterY) * scaleFactor;
+                    d.body.position.z *= scaleFactor;
+
+                    // Reflect velocity off the inner dome surface
+                    const dot = d.body.velocity.x * unx + d.body.velocity.y * uny + d.body.velocity.z * unz;
+                    if (dot < 0) {
+                        d.body.velocity.x = (d.body.velocity.x - 2 * dot * unx) * 0.6;
+                        d.body.velocity.y = (d.body.velocity.y - 2 * dot * uny) * 0.6;
+                        d.body.velocity.z = (d.body.velocity.z - 2 * dot * unz) * 0.6;
+                        playDiceImpactSound(0.2);
+                    }
+                }
+            }
+
+            if (isShaking && elapsedTime > SHAKE_DURATION && diceArray.slice(0, activeDiceCount).every(d => d.isResting)) {
+                isShaking = false;
+            }
+        }
+
+        function startShake() {
+            if (isDiceHidden || isAutoReshaking) return;
+
+            if (soundEnabled) {
+                initAudio();
+            }
+
+            const alreadyShaking = isShaking;
+            isShaking = true;
+            // Reset shakeStartTime on every tap so the active shake duration extends continuously while tapping
+            shakeStartTime = performance.now();
+
+            for (let i = 0; i < activeDiceCount; i++) {
+                const d = diceArray[i];
+                if (d.isLocked) {
+                    d.isResting = true;
+                    continue;
+                }
+
+                d.isResting = false;
+                d.body.wakeUp();
+
+                // Prevent excessive vertical launching on rapid multi-taps
+                const maxTapUpwardVel = 8.5;
+                const nextVelY = alreadyShaking
+                    ? Math.min(Math.max(d.body.velocity.y, 4.5) + 2.5, maxTapUpwardVel)
+                    : (6.0 + Math.random() * 3.5);
+
+                d.body.velocity.set(
+                    (Math.random() - 0.5) * 7,
+                    nextVelY,
+                    (Math.random() - 0.5) * 7
+                );
+                d.body.angularVelocity.set(
+                    (Math.random() - 0.5) * 22,
+                    (Math.random() - 0.5) * 22,
+                    (Math.random() - 0.5) * 22
+                );
+            }
+        }
+
+        // Pointer click to toggle lock on dice OR trigger shake on dome background
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+
+        function handlePointerTrigger(event) {
+            if (isDiceHidden || !renderer || !renderer.domElement) return;
+            const rect = renderer.domElement.getBoundingClientRect();
+            let clientX, clientY;
+            if (event.touches && event.touches.length > 0) {
+                clientX = event.touches[0].clientX;
+                clientY = event.touches[0].clientY;
+            } else {
+                clientX = event.clientX;
+                clientY = event.clientY;
+            }
+            mouse.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+            mouse.y = -((clientY - rect.top) / rect.height) * 2 + 1;
+
+            raycaster.setFromCamera(mouse, camera);
+
+            // First check if an active die was tapped
+            const activeMeshes = diceArray.slice(0, activeDiceCount).map(d => d.mesh);
+            const diceIntersects = raycaster.intersectObjects(activeMeshes);
+
+            if (diceIntersects.length > 0 && !isShaking) {
+                const hitMesh = diceIntersects[0].object;
+                const dieObj = diceArray.find(d => d.mesh === hitMesh);
+                if (dieObj) {
+                    dieObj.isLocked = !dieObj.isLocked;
+                    dieObj.mesh.material = getDiceMaterials(dieObj.isLocked);
+
+                    if (dieObj.isLocked) {
+                        dieObj.body.type = CANNON.Body.KINEMATIC;
+                        dieObj.body.velocity.set(0, 0, 0);
+                        dieObj.body.angularVelocity.set(0, 0, 0);
+                    } else {
+                        dieObj.body.type = CANNON.Body.DYNAMIC;
+                        dieObj.body.mass = 1;
+                        dieObj.body.updateMassProperties();
+                    }
+                    playDiceImpactSound(0.15);
+                    return;
+                }
+            }
+
+            // Otherwise, check for dome/felt trigger
+            const intersects = raycaster.intersectObjects([feltMesh, baseMesh]);
+            if (intersects.length > 0) {
+                playDiceImpactSound(0.25); // Immediate synchronous sound trigger inside tap gesture
+                startShake();
+            }
+        }
+
+        if (renderer && renderer.domElement) {
+            renderer.domElement.addEventListener('click', handlePointerTrigger);
+            renderer.domElement.addEventListener('touchstart', function(e) {
+                if (soundEnabled) initAudio();
+            }, { passive: true });
+        }
+
+        // Render Loop throttled to 30 FPS for smooth mobile Safari performance
+        let clock = new THREE.Clock();
+        let fpsInterval = 1000 / 30;
+        let then = performance.now();
+
+        function animate() {
+            requestAnimationFrame(animate);
+            let now = performance.now();
+            let elapsed = now - then;
+            if (elapsed > fpsInterval) {
+                then = now - (elapsed % fpsInterval);
+                const delta = Math.min(clock.getDelta(), 0.1);
+                updatePhysics(delta);
+                if (renderer && renderer.render) {
+                    renderer.render(scene, camera);
+                }
+            }
+        }
+
+        window.addEventListener('resize', () => {
+            camera.aspect = container.clientWidth / container.clientHeight;
+            camera.updateProjectionMatrix();
+            if (renderer && renderer.setSize) {
+                renderer.setSize(container.clientWidth, container.clientHeight);
+            }
+        });
+
+        window.onload = function() {
+            if (renderer && renderer.domElement) {
+                animate();
+            }
+        };
+    </script>
+</body>
+</html>

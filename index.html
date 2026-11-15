@@ -189,72 +189,10 @@
     </main>
 
     <script>
-        // --- Dual Web Audio + HTML5 Audio Engine (Guaranteed iOS Safari Sound) ---
+        // --- Ultra-Lightweight Safari Audio Engine ---
         let audioCtx = null;
-        let soundEnabled = true; // Sound enabled by default
+        let soundEnabled = true;
         let audioUnlocked = false;
-
-        // Pre-generate a short, deep percussive WAV Data URI for iOS HTML5 Audio playback
-        // (HTML5 <audio> plays even when the iPhone hardware Silent/Mute switch is ON)
-        function createImpactWavDataUri(baseFreq = 160, duration = 0.08) {
-            const sampleRate = 22050;
-            const numSamples = Math.floor(sampleRate * duration);
-            const buffer = new ArrayBuffer(44 + numSamples * 2);
-            const view = new DataView(buffer);
-
-            const writeString = (offset, str) => {
-                for (let i = 0; i < str.length; i++) {
-                    view.setUint8(offset + i, str.charCodeAt(i));
-                }
-            };
-
-            writeString(0, 'RIFF');
-            view.setUint32(4, 36 + numSamples * 2, true);
-            writeString(8, 'WAVE');
-            writeString(12, 'fmt ');
-            view.setUint32(16, 16, true);
-            view.setUint16(20, 1, true); // PCM
-            view.setUint16(22, 1, true); // Mono
-            view.setUint32(24, sampleRate, true);
-            view.setUint32(28, sampleRate * 2, true);
-            view.setUint16(32, 2, true);
-            view.setUint16(34, 16, true);
-            writeString(36, 'data');
-            view.setUint32(40, numSamples * 2, true);
-
-            let phase = 0;
-            for (let i = 0; i < numSamples; i++) {
-                const t = i / numSamples;
-                const freq = baseFreq * Math.pow(60 / baseFreq, t);
-                const env = Math.pow(1 - t, 2.2);
-                phase += (2 * Math.PI * freq) / sampleRate;
-                const sample = Math.sin(phase) * env * 0.75;
-                view.setInt16(44 + i * 2, Math.max(-32768, Math.min(32767, sample * 32767)), true);
-            }
-
-            let binary = '';
-            const bytes = new Uint8Array(buffer);
-            for (let i = 0; i < bytes.byteLength; i++) {
-                binary += String.fromCharCode(bytes[i]);
-            }
-            return 'data:audio/wav;base64,' + btoa(binary);
-        }
-
-        // Pool of 6 HTML5 Audio instances with slight pitch variations for overlapping dice impacts
-        const htmlAudioPool = [
-            new Audio(createImpactWavDataUri(170, 0.08)),
-            new Audio(createImpactWavDataUri(195, 0.08)),
-            new Audio(createImpactWavDataUri(220, 0.08)),
-            new Audio(createImpactWavDataUri(180, 0.08)),
-            new Audio(createImpactWavDataUri(210, 0.08)),
-            new Audio(createImpactWavDataUri(160, 0.08))
-        ];
-        htmlAudioPool.forEach(a => {
-            a.preload = 'auto';
-            a.setAttribute('playsinline', '');
-            a.setAttribute('webkit-playsinline', '');
-        });
-        let poolIdx = 0;
 
         function initAudio() {
             if (!audioCtx) {
@@ -266,32 +204,9 @@
             if (audioCtx && audioCtx.state === 'suspended') {
                 audioCtx.resume();
             }
-            if (!audioUnlocked) {
-                // Prime Web Audio
-                if (audioCtx) {
-                    const buffer = audioCtx.createBuffer(1, 1, 22050);
-                    const source = audioCtx.createBufferSource();
-                    source.buffer = buffer;
-                    source.connect(audioCtx.destination);
-                    if (source.start) source.start(0);
-                }
-                // Prime HTML5 Audio pool synchronously inside user gesture
-                htmlAudioPool.forEach(a => {
-                    a.muted = false;
-                    a.volume = 0.01;
-                    const p = a.play();
-                    if (p && p.then) {
-                        p.then(() => {
-                            a.pause();
-                            a.currentTime = 0;
-                        }).catch(() => {});
-                    }
-                });
-                audioUnlocked = true;
-            }
+            audioUnlocked = true;
         }
 
-        // Global iOS touch/click unlock listener on capture phase
         function unlockAudioOnGesture() {
             if (soundEnabled) {
                 initAudio();
@@ -301,39 +216,24 @@
         document.addEventListener('touchend', unlockAudioOnGesture, { capture: true, passive: true });
         document.addEventListener('click', unlockAudioOnGesture, { capture: true, passive: true });
 
-        // Deeper pitch oscillator impact sound backed by HTML5 Audio + Web Audio fallback for iOS
-        function playDiceImpactSound(volume = 0.3) {
+        // Ultra-lightweight click / impact sound function for maximum Safari performance
+        function playDiceImpactSound(volume = 0.2) {
             if (!soundEnabled) return;
             initAudio();
 
-            // 1. Play via HTML5 Audio pool (works on iOS even if Silent Switch is ON)
-            const audioEl = htmlAudioPool[poolIdx];
-            poolIdx = (poolIdx + 1) % htmlAudioPool.length;
-            try {
-                audioEl.muted = false;
-                audioEl.pause();
-                audioEl.currentTime = 0;
-                audioEl.volume = Math.min(1, Math.max(0.1, volume * 2.5));
-                const playPromise = audioEl.play();
-                if (playPromise && playPromise.catch) {
-                    playPromise.catch(() => {});
-                }
-            } catch (e) {}
-
-            // 2. Simultaneous Web Audio synthesizer (works reliably when iPhone Ring mode is active)
             if (audioCtx && audioCtx.state === 'running') {
                 try {
                     const osc = audioCtx.createOscillator();
                     const gain = audioCtx.createGain();
                     osc.type = 'sine';
-                    osc.frequency.setValueAtTime(190 + Math.random() * 110, audioCtx.currentTime);
-                    osc.frequency.exponentialRampToValueAtTime(60, audioCtx.currentTime + 0.08);
-                    gain.gain.setValueAtTime(volume, audioCtx.currentTime);
-                    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.08);
+                    osc.frequency.setValueAtTime(180, audioCtx.currentTime);
+                    osc.frequency.exponentialRampToValueAtTime(50, audioCtx.currentTime + 0.05);
+                    gain.gain.setValueAtTime(volume * 0.5, audioCtx.currentTime);
+                    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.05);
                     osc.connect(gain);
                     gain.connect(audioCtx.destination);
                     osc.start();
-                    osc.stop(audioCtx.currentTime + 0.08);
+                    osc.stop(audioCtx.currentTime + 0.05);
                 } catch (e) {}
             }
         }
